@@ -1,22 +1,18 @@
 'use client'
-import { useRef, useState } from 'react'
-import useSWR from 'swr'
+import type OpenAI from 'openai'
+import { useEffect, useRef, useState } from 'react'
 
-interface ModelType {
-  object: 'engine'
-  id: string
-  ready: boolean
-  owner: string
-  permissions: null
-  created: string
-}
-
-const Form = () => {
+const Form = ({ modelsList }: { modelsList: OpenAI.ModelsPage }) => {
   const messageInput = useRef<HTMLTextAreaElement | null>(null)
-  const [response, setResponse] = useState<string[]>([])
+  // causes rerender without useEffect due to suspense boundary
+  // const storedResponse = typeof localStorage !== 'undefined' ? localStorage.getItem('response') : null;
+  // const initialHistory = storedResponse ? JSON.parse(storedResponse) : [];
+  // const [history, setHistory] = useState<string[]>(initialHistory);
+  const [history, setHistory] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState<boolean>(false)
-  const [models, setModels] = useState<ModelType[]>([])
-  const [currentModel, setCurrentModel] = useState<string>('gpt-3.5-turbo')
+  // const [models, setModels] = useState<ModelType[]>([])
+  const [models, setModels] = useState(modelsList.data)
+  const [currentModel, setCurrentModel] = useState<string>('gpt-4')
 
   const handleEnter = (
     e: React.KeyboardEvent<HTMLTextAreaElement> &
@@ -33,7 +29,7 @@ const Form = () => {
     e.preventDefault()
     const message = messageInput.current?.value
     if (message !== undefined) {
-      setResponse((prev) => [...prev, message])
+      setHistory((prev) => [...prev, message])
       messageInput.current!.value = ''
     }
 
@@ -68,7 +64,7 @@ const Form = () => {
     const decoder = new TextDecoder()
     let done = false
 
-    setResponse((prev) => [...prev, message])
+    setHistory((prev) => [...prev, message])
 
     let currentResponse: string[] = []
     while (!done) {
@@ -77,36 +73,32 @@ const Form = () => {
       const chunkValue = decoder.decode(value)
       // currentResponse = [...currentResponse, message, chunkValue];
       currentResponse = [...currentResponse, chunkValue]
-      setResponse((prev) => [...prev.slice(0, -1), currentResponse.join('')])
+      setHistory((prev) => [...prev.slice(0, -1), currentResponse.join('')])
+      console.log('rerender')
     }
+    console.log('rerender-2')
     // breaks text indent on refresh due to streaming
-    // localStorage.setItem('response', JSON.stringify(currentResponse));
+    // localStorage.setItem('response', JSON.stringify(history))
     setIsLoading(false)
   }
 
   const handleReset = () => {
     localStorage.removeItem('response')
-    setResponse([])
+    setHistory([])
   }
 
-  useSWR('fetchingResponse', async () => {
+  // Save the 'history' state to 'localStorage' whenever it changes
+  useEffect(() => {
+    localStorage.setItem('response', JSON.stringify(history))
+  }, [history])
+
+  // Initialize 'history' state from 'localStorage' when the component mounts
+  useEffect(() => {
     const storedResponse = localStorage.getItem('response')
     if (storedResponse) {
-      setResponse(JSON.parse(storedResponse))
+      setHistory(JSON.parse(storedResponse))
     }
-  })
-
-  const fetcher = async () => {
-    const models = await (await fetch('/api/models')).json()
-    setModels(models.data)
-    const modelIndex = models.data.findIndex(
-      (model: ModelType) => model.id === 'gpt-3.5-turbo'
-    )
-    setCurrentModel(models.data[modelIndex].id)
-    return models
-  }
-
-  useSWR('fetchingModels', fetcher)
+  }, [])
 
   const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setCurrentModel(e.target.value)
@@ -135,7 +127,7 @@ const Form = () => {
       </button>
       <div className='w-full mx-2 flex flex-col items-start gap-3 pt-6 last:mb-6 md:mx-auto md:max-w-3xl'>
         {isLoading
-          ? response.map((item: any, index: number) => {
+          ? history.map((item: any, index: number) => {
               return (
                 <div
                   key={index}
@@ -147,8 +139,8 @@ const Form = () => {
                 </div>
               )
             })
-          : response
-          ? response.map((item: string, index: number) => {
+          : history
+          ? history.map((item: string, index: number) => {
               return (
                 <div
                   key={index}
